@@ -96,7 +96,6 @@ def launch_inference(
             _ = infer(inputs[0])
     return outputs, time_buffer
 
-
 def main(commands: argparse.Namespace):
     torch.cuda.empty_cache()
     setup_logging(level=logging.INFO if commands.verbose else logging.WARNING)
@@ -154,6 +153,9 @@ def main(commands: argparse.Namespace):
     elif commands.task == "text-generation" and commands.generative_model == "t5":
         model_pytorch = AutoModelForSeq2SeqLM.from_pretrained(commands.model, use_auth_token=auth_token)
         input_names = ["input_ids"]
+    elif commands.task == "layoutlm":
+        model_pytorch = AutoModelForTokenClassification.from_pretrained(commands.model, use_auth_token=auth_token)
+        input_names = ["input_ids", "bbox"]
     else:
         raise Exception(f"unknown task: {commands.task}")
 
@@ -191,12 +193,16 @@ def main(commands: argparse.Namespace):
             device=commands.device,
             nb_inputs_to_gen=commands.warmup,
         )
+        if commands.task == "layoutlm":
+            shape = (tensor_shapes[1][0], tensor_shapes[1][1], 4)
+            for ip in inputs_pytorch:
+                ip["bbox"] = torch.ones(size=shape, dtype=torch.int32, device=commands.device)
         convert_to_onnx(
             model_pytorch=model_pytorch,
             output_path=onnx_model_path,
             inputs_pytorch=inputs_pytorch[0],
             quantization=commands.quantization,
-            var_output_seq=commands.task in ["text-generation", "token-classification", "question-answering"],
+            var_output_seq=commands.task in ["text-generation", "token-classification", "question-answering", "layoutlm"],
             output_names=["output"] if commands.task != "question-answering" else ["start_logits", "end_logits"],
         )
 
@@ -211,7 +217,7 @@ def main(commands: argparse.Namespace):
                 max_length=commands.seq_len[0],
                 num_beams=2,
             )
-        if task in ["classification", "text-generation", "token-classification", "question-answering"]:
+        if task in ["classification", "text-generation", "token-classification", "question-answering", "layoutlm"]:
             return infer_classification_pytorch(model=model, run_on_cuda=cuda)
         if task == "embedding":
             return infer_feature_extraction_pytorch(model=model, run_on_cuda=cuda)
@@ -270,6 +276,8 @@ def main(commands: argparse.Namespace):
             conf_class: Type[Configuration] = ConfigurationTokenClassifier
         elif commands.task == "question-answering":
             conf_class: Type[Configuration] = ConfigurationQuestionAnswering
+        elif commands.task == "layoutlm":
+            conf_class: Type[Configuration] = ConfigurationTokenClassifier
         else:
             conf_class = ConfigurationEnc
 
@@ -487,7 +495,6 @@ def main(commands: argparse.Namespace):
     for name, time_buffer in timings.items():
         print_timings(name=name, timings=time_buffer)
     print(f"Each inference engine output is within {commands.atol} tolerance compared to Pytorch output")
-
 
 def entrypoint():
     args = parse_args()

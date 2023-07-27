@@ -26,7 +26,7 @@ test_ci:
 
 .PHONY: docker_build
 docker_build:
-	DOCKER_BUILDKIT=1 docker build \
+	DOCKER_BUILDKIT=0 docker build \
 	--rm \
 	-t ghcr.io/els-rd/transformer-deploy:latest \
 	-t ghcr.io/els-rd/transformer-deploy:$(VERSION) \
